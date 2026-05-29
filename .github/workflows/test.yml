@@ -292,6 +292,258 @@ jobs:
       - name: Verify vp exec works
         run: vp exec node -e "console.log('vp exec works in Alpine')"
 
+  test-sfw:
+    # sfw wraps vp install end-to-end on all OSes (macOS / Windows supported
+    # since vite-plus v0.1.23). On Linux we verify across every package
+    # manager vp auto-detects via lockfile (pnpm/npm/yarn/bun); macOS / Windows
+    # run pnpm only because the PM choice doesn't change the sfw wrap path —
+    # those cells exist to prove the cross-platform sfw download + wrap works.
+    # vp version is left at the action default (`latest`) — sfw is decoupled
+    # from vp's release channel. Other test jobs (test-cache-*,
+    # test-node-version, etc.) still cover the alpha channel for vp itself.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        package-manager: [pnpm, npm, yarn, bun]
+        exclude:
+          # Non-Linux runs pnpm only — PM diversity adds no sfw-wrap coverage.
+          - { os: macos-latest, package-manager: npm }
+          - { os: macos-latest, package-manager: yarn }
+          - { os: macos-latest, package-manager: bun }
+          - { os: windows-latest, package-manager: npm }
+          - { os: windows-latest, package-manager: yarn }
+          - { os: windows-latest, package-manager: bun }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: taiki-e/checkout-action@7d1e50e93dc4fb3bba58f85018fadf77898aee8b # v1.4.2
+
+      - name: Create test project for ${{ matrix.package-manager }}
+        shell: bash
+        run: |
+          case "${{ matrix.package-manager }}" in
+            pnpm) LOCKFILE=pnpm-lock.yaml; CONTENTS='' ;;
+            npm)  LOCKFILE=package-lock.json; CONTENTS='{"name":"test-project","lockfileVersion":3}' ;;
+            yarn) LOCKFILE=yarn.lock; CONTENTS='' ;;
+            bun)  LOCKFILE=bun.lock; CONTENTS='' ;;
+            *)    echo "Unsupported package-manager: ${{ matrix.package-manager }}" >&2; exit 1 ;;
+          esac
+          mkdir -p test-project
+          cd test-project
+          echo '{"name":"test-project","private":true,"dependencies":{"is-odd":"^3.0.1"}}' > package.json
+          printf '%s' "$CONTENTS" > "$LOCKFILE"
+
+      - name: Configure Yarn .yarnrc.yml (Linux + yarn only)
+        if: matrix.package-manager == 'yarn' && runner.os == 'Linux'
+        # nodeLinker=node-modules: Yarn Berry defaults to Plug'n'Play, which
+        #   makes plain `require()` from a non-yarn-wrapped node process fail.
+        # enableImmutableInstalls=false: Yarn Berry auto-enables immutable
+        #   installs under CI, which makes the bootstrap from an empty
+        #   yarn.lock fail with YN0028. Setting it here (instead of via the
+        #   YARN_ENABLE_IMMUTABLE_INSTALLS env var) survives any future
+        #   env-sanitization vp might apply to spawned subprocesses.
+        shell: bash
+        run: |
+          {
+            echo "nodeLinker: node-modules"
+            echo "enableImmutableInstalls: false"
+          } > test-project/.yarnrc.yml
+
+      - name: Setup Vite+ with sfw + ${{ matrix.package-manager }}
+        uses: ./
+        with:
+          sfw: true
+          run-install: |
+            - cwd: test-project
+          cache: false
+
+      - name: Verify sfw is on PATH
+        run: sfw --version
+
+      - name: Verify dependency installed via ${{ matrix.package-manager }}
+        working-directory: test-project
+        run: vp exec node -e "console.log(require('is-odd')(3))"
+
+  test-sfw-alpine:
+    # vp version is left at the action default (`latest`) — sfw's musl asset
+    # selection is decoupled from vp's release channel.
+    # NOTE: if this job is later re-matrixed (alpha+latest, multiple alpine
+    # versions, etc.), restore `strategy: { fail-fast: false }` so a flake in
+    # one shard doesn't cancel the others.
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:3.23
+    steps:
+      - name: Install Alpine dependencies
+        run: apk add --no-cache bash curl gcompat libstdc++
+
+      - uses: taiki-e/checkout-action@7d1e50e93dc4fb3bba58f85018fadf77898aee8b # v1.4.2
+
+      - name: Create test project with a real dependency
+        run: |
+          mkdir -p test-project
+          cd test-project
+          echo '{"name":"test-project","private":true,"dependencies":{"is-odd":"^3.0.1"}}' > package.json
+
+      - name: Setup Vite+ with sfw (musl)
+        uses: ./
+        with:
+          sfw: true
+          run-install: |
+            - cwd: test-project
+          cache: false
+
+      - name: Verify sfw is on PATH (musl)
+        run: sfw --version
+
+      - name: Verify dependency installed under sfw (musl)
+        working-directory: test-project
+        run: vp exec node -e "console.log(require('is-odd')(3))"
+
+  test-sfw-blocks-malicious:
+    # Verifies sfw actually intercepts a known-malicious package, not just
+    # that it wraps the install. Uses `lodahs` (lodash typosquat), the same
+    # canary SocketDev's own workflows use:
+    # https://github.com/SocketDev/bun-security-scanner/blob/main/.github/workflows/test.yml
+    # If this job ever stops blocking, either sfw is misconfigured or the
+    # canary itself has been delisted — swap it for another Socket-flagged
+    # package from https://socket.dev/blog/category/threat-research.
+    # vp version is left at the action default (`latest`) — sfw block behavior
+    # is decoupled from vp's release channel.
+    # Runs on all three OSes: a fail-open regression in vp/sfw's proxy or CA
+    # handling can be platform-specific (the #73 rustls cert-trust class of
+    # bug was), so each OS needs its own block assertion — benign-install
+    # success (the test-sfw job) is not enough proof.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: taiki-e/checkout-action@7d1e50e93dc4fb3bba58f85018fadf77898aee8b # v1.4.2
+
+      - name: Create test project with a benign dependency
+        shell: bash
+        run: |
+          mkdir -p test-project
+          cd test-project
+          echo '{"name":"test-project","private":true,"dependencies":{"is-odd":"^3.0.1"}}' > package.json
+
+      - name: Setup Vite+ with sfw and install benign dep
+        uses: ./
+        with:
+          sfw: true
+          run-install: |
+            - cwd: test-project
+          cache: false
+
+      - name: Assert sfw blocks malicious package (lodahs typosquat of lodash)
+        shell: bash
+        working-directory: test-project
+        # Exit code alone isn't sufficient: a non-zero exit from npm 404,
+        # network blip, or vp crash would also produce a false positive. We
+        # also require the literal sfw block-line for lodahs in the combined
+        # output so an unrelated failure doesn't get reported as "sfw blocked
+        # it". The block-line format observed in CI is:
+        #   " - blocked npm package: name: lodahs; version: ...; reason: ..."
+        # The banner "Protected by Socket Firewall" and the "=== Socket
+        # Firewall ===" header are emitted on EVERY sfw invocation, so neither
+        # of those is a usable marker — use the unique "blocked npm package:
+        # name: lodahs" line instead.
+        run: |
+          set +e
+          OUTPUT=$(sfw vp install lodahs 2>&1)
+          CODE=$?
+          set -e
+          printf '%s\n' "$OUTPUT"
+          if [ "$CODE" -eq 0 ]; then
+            echo "::error::sfw failed to block lodahs on ${{ matrix.os }} — install exited 0"
+            exit 1
+          fi
+          if ! printf '%s' "$OUTPUT" | grep -qF -- "blocked npm package: name: lodahs"; then
+            echo "::error::sfw vp install exited $CODE on ${{ matrix.os }} but the lodahs block-line was not in the output — likely failed for a non-sfw reason (canary delisted, network blip, vp crash, or sfw output format changed). Swap the canary if Socket has delisted lodahs, or update the marker grep if sfw's block-line format changed."
+            exit 1
+          fi
+          echo "OK: sfw blocked lodahs on ${{ matrix.os }} (exit $CODE, block-line found)"
+
+  test-sfw-with-socketdev-action:
+    # Exercises the composition path: install sfw via the upstream
+    # `socketdev/action@<sha>` step first, then call setup-vp with `sfw:
+    # true`. setup-vp should DETECT the pre-installed sfw on PATH (via
+    # findSfwOnPath()) and SKIP its bundled download. We assert that by
+    # checking $RUNNER_TEMP/sfw-bin/sfw[.exe] — the exact path
+    # installSfw() would have created — was NOT created. We also assert the
+    # composed sfw actually BLOCKS a malicious package (lodahs), so this path
+    # is proven to enforce, not just to be wired up.
+    # See README "Advanced: stricter supply chain via socketdev/action".
+    runs-on: ubuntu-latest
+    steps:
+      - uses: taiki-e/checkout-action@7d1e50e93dc4fb3bba58f85018fadf77898aee8b # v1.4.2
+
+      - name: Create test project with a real dependency
+        shell: bash
+        run: |
+          mkdir -p test-project
+          cd test-project
+          echo '{"name":"test-project","private":true,"dependencies":{"is-odd":"^3.0.1"}}' > package.json
+
+      - name: Install sfw via socketdev/action
+        uses: socketdev/action@ba6de6cc0565af1f42295590380973573297e31f
+        with:
+          mode: firewall-free
+
+      - name: Setup Vite+ with sfw (composition path)
+        uses: ./
+        id: setup-vp
+        with:
+          sfw: true
+          run-install: |
+            - cwd: test-project
+          cache: false
+
+      - name: Verify setup-vp used the composed sfw (no bundled download)
+        shell: bash
+        # Negative assertion: if setup-vp had downloaded its own sfw, it
+        # would land at $RUNNER_TEMP/sfw-bin/sfw[.exe] (per
+        # getSfwBinDir() in install-sfw.ts). On the composition path the
+        # PATH-detection branch should fire FIRST and skip the download
+        # entirely, so neither file should exist.
+        run: |
+          if [ -e "$RUNNER_TEMP/sfw-bin/sfw" ] || [ -e "$RUNNER_TEMP/sfw-bin/sfw.exe" ]; then
+            echo "::error::setup-vp downloaded its own sfw binary even though one was pre-installed via socketdev/action. The PATH-detection branch in setupSfw() regressed."
+            exit 1
+          fi
+          echo "OK: setup-vp used the pre-installed sfw (no bundled download at \$RUNNER_TEMP/sfw-bin/)"
+
+      - name: Verify dependency installed under composed sfw
+        working-directory: test-project
+        run: vp exec node -e "console.log(require('is-odd')(3))"
+
+      - name: Assert composed sfw blocks malicious package (lodahs)
+        shell: bash
+        working-directory: test-project
+        # Proves the composition path actually enforces, not just that sfw is
+        # present. socketdev/action exports SFW_JSON_REPORT_PATH into the env,
+        # which makes sfw write its block report to JSON instead of stdout —
+        # we unset it here so the block-line goes to stdout, matching the
+        # marker check used by test-sfw-blocks-malicious.
+        run: |
+          unset SFW_JSON_REPORT_PATH
+          set +e
+          OUTPUT=$(sfw vp install lodahs 2>&1)
+          CODE=$?
+          set -e
+          printf '%s\n' "$OUTPUT"
+          if [ "$CODE" -eq 0 ]; then
+            echo "::error::composed sfw failed to block lodahs — install exited 0"
+            exit 1
+          fi
+          if ! printf '%s' "$OUTPUT" | grep -qF -- "blocked npm package: name: lodahs"; then
+            echo "::error::composed sfw vp install exited $CODE but the lodahs block-line was not in the output (canary delisted, network blip, or sfw output format changed)."
+            exit 1
+          fi
+          echo "OK: composed sfw blocked lodahs (exit $CODE, block-line found)"
+
   build:
     runs-on: ubuntu-latest
     steps:

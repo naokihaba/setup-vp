@@ -8,6 +8,7 @@ GitHub Action to set up [Vite+](https://viteplus.dev) (`vp`) with dependency cac
 - Optionally set up a specific Node.js version via `vp env use`
 - Cache project dependencies with auto-detection of lock files
 - Optionally run `vp install` after setup
+- Optionally wrap `vp install` with [Socket Firewall Free (`sfw`)](https://docs.socket.dev/docs/socket-firewall-free) to block malicious dependencies
 - Support for all major package managers (npm, pnpm, yarn, bun)
 
 ## Usage
@@ -135,6 +136,45 @@ steps:
       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
+### With Socket Firewall Free (sfw)
+
+Set `sfw: true` to wrap `vp install` with [Socket Firewall Free](https://docs.socket.dev/docs/socket-firewall-free). The action downloads the matching `sfw` binary from the upstream [releases](https://github.com/SocketDev/sfw-free/releases) (auto-detected per OS/arch, with musl support on Alpine) and runs `sfw vp install …` so the underlying npm / pnpm / yarn fetches are inspected before packages are installed. Works on Linux, macOS, and Windows:
+
+```yaml
+steps:
+  - uses: actions/checkout@v6
+  - uses: voidzero-dev/setup-vp@v1
+    with:
+      sfw: true
+      run-install: true
+```
+
+`sfw` is only applied when `run-install` is enabled; other `vp` commands (e.g. `vp env use`, `vp --version`) run unwrapped.
+
+The action pins the `sfw` version it downloads so a re-run of the same commit gets the same binary; [Renovate](https://docs.renovatebot.com/) opens a PR whenever SocketDev publishes a new `sfw-free` release (see [`.github/renovate.json`](.github/renovate.json)).
+
+#### Advanced: stricter supply chain via `socketdev/action`
+
+The bundled download uses a pinned URL but is not itself SHA-pinned. For workflows that want the `sfw` binary itself SHA-pinned (so a compromise of the upstream release artifact cannot land silently on the next run), compose with [`socketdev/action`](https://github.com/SocketDev/action) in an earlier step. setup-vp auto-detects an existing `sfw` on `PATH` and uses it instead of downloading:
+
+```yaml
+steps:
+  - uses: actions/checkout@v6
+  # SHA-pinned; let Renovate bump it
+  - uses: socketdev/action@<sha>
+    with:
+      mode: firewall-free
+  - uses: voidzero-dev/setup-vp@v1
+    with:
+      sfw: true
+      run-install: true
+```
+
+In the action log you will see `Using existing sfw on PATH: …` when this composition is detected, vs. `Installing sfw from …` for the bundled-download path.
+
+> [!NOTE]
+> **macOS / Windows require Vite+ v0.1.23 or newer.** Earlier `vp` releases didn't honor `HTTPS_PROXY` / `SSL_CERT_FILE`, so `sfw vp install` failed the TLS handshake on macOS / Windows (it always worked on Linux). The action's default `version: latest` satisfies this; if you pin an older `vp` and enable `sfw` on macOS / Windows, the install will fail the handshake. On a runner architecture with no published `sfw` binary (e.g. `riscv64`), the action logs a warning and falls back to plain `vp install`.
+
 ### Alpine Container
 
 Alpine Linux uses musl libc instead of glibc. Install compatibility packages before using the action:
@@ -178,6 +218,7 @@ jobs:
 | `node-version-file`     | Path to file containing Node.js version (`.nvmrc`, `.node-version`, `.tool-versions`, `package.json`)       | No       |                |
 | `working-directory`     | Project directory used for relative paths, lockfile auto-detection, environment checks, and default install | No       | Workspace root |
 | `run-install`           | Run `vp install` after setup. Accepts boolean or YAML object with `cwd`/`args`                              | No       | `true`         |
+| `sfw`                   | Wrap `vp install` with [Socket Firewall Free](https://docs.socket.dev/docs/socket-firewall-free) (`sfw`)    | No       | `false`        |
 | `cache`                 | Enable caching of project dependencies                                                                      | No       | `false`        |
 | `cache-dependency-path` | Path to lock file for cache key generation                                                                  | No       | Auto-detected  |
 | `registry-url`          | Optional registry to set up for auth. Sets the registry in `.npmrc` and reads auth from `NODE_AUTH_TOKEN`   | No       |                |

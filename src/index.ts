@@ -2,6 +2,7 @@ import { saveState, getState, setFailed, info, setOutput, warning } from "@actio
 import { exec, getExecOutput } from "@actions/exec";
 import { getInputs } from "./inputs.js";
 import { installVitePlus } from "./install-viteplus.js";
+import { setupSfw } from "./install-sfw.js";
 import { runViteInstall } from "./run-install.js";
 import { restoreCache } from "./cache-restore.js";
 import { saveCache } from "./cache-save.js";
@@ -43,9 +44,15 @@ async function runMain(inputs: Inputs): Promise<void> {
     await restoreCache(inputs);
   }
 
-  // Step 6: Run vp install if requested
+  // Step 6: Install Socket Firewall Free if requested (must run before vp install).
+  // setupSfw centralizes all the decision branches: run-install disabled, sfw
+  // already on PATH (e.g. via socketdev/action@<sha>), supported platform
+  // (downloads our pinned binary), unsupported platform (falls back).
+  const effectiveSfw = await setupSfw(inputs);
+
+  // Step 7: Run vp install if requested
   if (inputs.runInstall.length > 0) {
-    await runViteInstall(inputs);
+    await runViteInstall({ ...inputs, sfw: effectiveSfw });
   }
 
   // Print version info at the end

@@ -45,16 +45,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ["lts", "22", "24"]
+        node-version: ["lts", "20", "22", "24"]
     runs-on: ubuntu-latest
     steps:
       - uses: taiki-e/checkout-action@7d1e50e93dc4fb3bba58f85018fadf77898aee8b # v1.4.2
 
+      - name: Create test project
+        run: |
+          mkdir -p test-project
+          cd test-project
+          # Pin pnpm to v10. Vite+'s bundled pnpm 11 requires node:sqlite
+          # (Node >= 22.5) and crashes on Node 20; pnpm 10 still runs on Node 20.
+          echo '{"name":"test-project","private":true,"packageManager":"pnpm@10.34.3"}' > package.json
+
+      # Runs `vp env use <version>` then `vp install` in the test project.
       - name: Setup Vite+ with Node.js ${{ matrix.node-version }}
         uses: ./
         with:
           node-version: ${{ matrix.node-version }}
-          run-install: false
+          run-install: |
+            - cwd: test-project
           cache: false
 
       - name: Verify installation

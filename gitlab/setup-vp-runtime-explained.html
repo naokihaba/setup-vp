@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>gitlab/setup-vp.mjs 読解ガイド</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f8fa;
+        --surface: #ffffff;
+        --surface-soft: #f1f5f4;
+        --text: #1f2933;
+        --muted: #596579;
+        --border: #d7dee8;
+        --accent: #0f766e;
+        --accent-strong: #134e4a;
+        --note: #8a4b0f;
+        --code-bg: #101827;
+        --code-text: #e8edf5;
+        --shadow: 0 14px 32px rgb(31 41 51 / 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        line-height: 1.65;
+      }
+
+      a {
+        color: var(--accent);
+      }
+
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--accent), white 35%);
+        outline-offset: 4px;
+      }
+
+      code,
+      pre {
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      }
+
+      code {
+        border-radius: 4px;
+        background: var(--surface-soft);
+        padding: 0.08rem 0.28rem;
+        font-size: 0.92em;
+      }
+
+      pre {
+        overflow-x: auto;
+        border-radius: 8px;
+        background: var(--code-bg);
+        color: var(--code-text);
+        padding: 1rem;
+        line-height: 1.5;
+      }
+
+      pre code {
+        background: transparent;
+        color: inherit;
+        padding: 0;
+      }
+
+      .skip-link {
+        position: absolute;
+        left: 1rem;
+        top: 1rem;
+        z-index: 2;
+        transform: translateY(-140%);
+        border-radius: 6px;
+        background: var(--accent-strong);
+        color: white;
+        padding: 0.6rem 0.8rem;
+      }
+
+      .skip-link:focus {
+        transform: translateY(0);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr);
+        min-height: 100vh;
+      }
+
+      nav {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        overflow-y: auto;
+        border-right: 1px solid var(--border);
+        background: var(--surface);
+        padding: 1.25rem;
+      }
+
+      nav h2 {
+        margin: 0 0 1rem;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+
+      nav ol {
+        margin: 0;
+        padding-left: 1.25rem;
+      }
+
+      nav li {
+        margin: 0.45rem 0;
+      }
+
+      main {
+        padding: 2rem;
+      }
+
+      header,
+      section {
+        width: min(100%, 72rem);
+        margin: 0 auto 1.25rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      header {
+        padding: clamp(1.5rem, 4vw, 3rem);
+      }
+
+      section {
+        padding: clamp(1.25rem, 3vw, 2rem);
+      }
+
+      h1,
+      h2,
+      h3 {
+        line-height: 1.25;
+        letter-spacing: 0;
+      }
+
+      h1 {
+        max-width: 18ch;
+        margin: 0;
+        font-size: clamp(2rem, 5vw, 4rem);
+      }
+
+      h2 {
+        margin: 0 0 1rem;
+        font-size: clamp(1.4rem, 3vw, 2rem);
+      }
+
+      h3 {
+        margin: 1.25rem 0 0.45rem;
+        font-size: 1.08rem;
+      }
+
+      p {
+        max-width: 82ch;
+      }
+
+      .lead {
+        margin: 1rem 0 0;
+        color: var(--muted);
+        font-size: 1.05rem;
+      }
+
+      .eyebrow {
+        margin: 0 0 0.6rem;
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+        gap: 1rem;
+      }
+
+      .panel,
+      details {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #fbfcfe;
+        padding: 1rem;
+      }
+
+      .panel h3 {
+        margin-top: 0;
+      }
+
+      details {
+        margin: 0.8rem 0;
+      }
+
+      summary {
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .pill-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        padding: 0;
+        list-style: none;
+      }
+
+      .pill-list li {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface-soft);
+        padding: 0.25rem 0.6rem;
+        font-size: 0.9rem;
+      }
+
+      .flow {
+        display: grid;
+        gap: 0.8rem;
+        margin-top: 1rem;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 2.5rem minmax(0, 1fr);
+        gap: 0.85rem;
+        align-items: start;
+      }
+
+      .step-number {
+        display: inline-grid;
+        place-items: center;
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 999px;
+        background: var(--accent);
+        color: white;
+        font-weight: 800;
+      }
+
+      .step-body {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: #fbfcfe;
+        padding: 0.85rem 1rem;
+      }
+
+      .step-body strong {
+        display: block;
+      }
+
+      .note {
+        border-left: 4px solid var(--note);
+        background: #fff7ed;
+        padding: 0.9rem 1rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+      }
+
+      caption {
+        margin-bottom: 0.5rem;
+        color: var(--muted);
+        text-align: left;
+      }
+
+      th,
+      td {
+        border: 1px solid var(--border);
+        padding: 0.65rem 0.75rem;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: var(--surface-soft);
+      }
+
+      @media (max-width: 860px) {
+        .layout {
+          display: block;
+        }
+
+        nav {
+          position: static;
+          height: auto;
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+        }
+
+        main {
+          padding: 1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#content">本文へ移動</a>
+    <div class="layout">
+      <nav aria-label="読解目次">
+        <h2>読む順番</h2>
+        <ol>
+          <li><a href="#overview">全体像</a></li>
+          <li><a href="#inputs">入力と状態</a></li>
+          <li><a href="#main-flow">main の流れ</a></li>
+          <li><a href="#node-version">Node version 解決</a></li>
+          <li><a href="#run-install">run-install 解釈</a></li>
+          <li><a href="#auth">registry auth</a></li>
+          <li><a href="#sfw">sfw</a></li>
+          <li><a href="#env-bridge">GitLab shell への引き継ぎ</a></li>
+          <li><a href="#reading-checklist">読解チェック</a></li>
+        </ol>
+      </nav>
+
+      <main id="content" tabindex="-1">
+        <header>
+          <p class="eyebrow">gitlab/setup-vp.mjs</p>
+          <h1>GitLab runtime 読解ガイド</h1>
+          <p class="lead">
+            このHTMLは <code>gitlab/setup-vp.mjs</code> を読むための道案内です。
+            まず実行順を押さえ、そのあと周辺の
+            parser、auth、sfw、環境変数の引き継ぎを読む構成にしています。
+          </p>
+        </header>
+
+        <section id="overview" aria-labelledby="overview-title">
+          <h2 id="overview-title">全体像</h2>
+          <p>
+            <code>setup-vp.mjs</code> は GitLab template の Node.js runtime です。
+            <code>gitlab/bootstrap.sh</code> が Vite+ と Node
+            を最低限用意したあと、このファイルを実行します。
+          </p>
+          <div class="grid">
+            <article class="panel">
+              <h3>責務</h3>
+              <ul>
+                <li><code>node-version-file</code> を読む</li>
+                <li><code>vp env use</code> を実行する</li>
+                <li>registry auth 用の <code>.npmrc</code> を作る</li>
+                <li><code>run-install</code> を解釈して <code>vp install</code> を実行する</li>
+                <li>必要なら <code>sfw vp install</code> に切り替える</li>
+              </ul>
+            </article>
+            <article class="panel">
+              <h3>入口</h3>
+              <p>
+                最後の direct-execution guard から <code>main()</code> が呼ばれます。
+                読むときは末尾の <code>main()</code> から戻るのが一番追いやすいです。
+              </p>
+              <p><a href="setup-vp.mjs">setup-vp.mjs を開く</a></p>
+            </article>
+            <article class="panel">
+              <h3>テスト</h3>
+              <p>
+                parser と auth の主要挙動は
+                <code>gitlab/setup-vp.test.mjs</code> にまとまっています。
+                読解で迷ったらテストの期待値を先に見ると早いです。
+              </p>
+              <p><a href="setup-vp.test.mjs">setup-vp.test.mjs を開く</a></p>
+            </article>
+          </div>
+        </section>
+
+        <section id="inputs" aria-labelledby="inputs-title">
+          <h2 id="inputs-title">入力と状態</h2>
+          <p>
+            この runtime は GitLab include input を直接読むのではなく、<code>setup-vp.yml</code> が
+            export した <code>SETUP_VP_*</code> 環境変数を読みます。
+          </p>
+          <table>
+            <caption>
+              主な環境変数
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">変数</th>
+                <th scope="col">意味</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>SETUP_VP_NODE_VERSION</code></td>
+                <td>
+                  <code>vp env use</code> に渡す Node.js version。未指定時は <code>lts</code>。
+                </td>
+              </tr>
+              <tr>
+                <td><code>SETUP_VP_NODE_VERSION_FILE</code></td>
+                <td>
+                  指定されると version file の内容が <code>node-version</code> より優先されます。
+                </td>
+              </tr>
+              <tr>
+                <td><code>SETUP_VP_RUN_INSTALL</code></td>
+                <td><code>true</code>、<code>false</code>、JSON、または限定的な YAML subset。</td>
+              </tr>
+              <tr>
+                <td><code>SETUP_VP_REGISTRY_URL</code></td>
+                <td>指定されると一時 <code>.npmrc</code> を作ります。</td>
+              </tr>
+              <tr>
+                <td><code>SETUP_VP_ENV_FILE</code></td>
+                <td>GitLab job shell に戻す export 文を書き込むファイル。</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="main-flow" aria-labelledby="main-flow-title">
+          <h2 id="main-flow-title">main の流れ</h2>
+          <p>まずここを読んでください。細かい helper はあとで戻れば十分です。</p>
+          <div class="flow" aria-label="main function flow">
+            <div class="step">
+              <span class="step-number">1</span>
+              <div class="step-body">
+                <strong><code>resolveProjectDir(env)</code></strong>
+                <span
+                  >GitLab の <code>CI_PROJECT_DIR</code> と
+                  <code>working-directory</code> から実作業ディレクトリを決めます。</span
+                >
+              </div>
+            </div>
+            <div class="step">
+              <span class="step-number">2</span>
+              <div class="step-body">
+                <strong><code>resolveNodeVersionFile(...)</code></strong>
+                <span
+                  ><code>node-version-file</code> があれば、ファイルから Node.js version
+                  を解決します。</span
+                >
+              </div>
+            </div>
+            <div class="step">
+              <span class="step-number">3</span>
+              <div class="step-body">
+                <strong><code>run("vp", ["env", "use", version])</code></strong>
+                <span>最終的に決まった Node.js version を Vite+ に設定させます。</span>
+              </div>
+            </div>
+            <div class="step">
+              <span class="step-number">4</span>
+              <div class="step-body">
+                <strong><code>configureAuth(...)</code></strong>
+                <span>private registry 用の npm/pnpm 設定を作ります。未指定なら何もしません。</span>
+              </div>
+            </div>
+            <div class="step">
+              <span class="step-number">5</span>
+              <div class="step-body">
+                <strong><code>parseRunInstall(...)</code></strong>
+                <span><code>run-install</code> 入力を install 対象の配列に変換します。</span>
+              </div>
+            </div>
+            <div class="step">
+              <span class="step-number">6</span>
+              <div class="step-body">
+                <strong><code>setupSfw(...)</code> and <code>runInstall(...)</code></strong>
+                <span
+                  ><code>sfw</code> が有効なら準備し、<code>vp install</code> または
+                  <code>sfw vp install</code> を実行します。</span
+                >
+              </div>
+            </div>
+            <div class="step">
+              <span class="step-number">7</span>
+              <div class="step-body">
+                <strong><code>run("vp", ["--version"])</code></strong>
+                <span>最後にインストール結果をログへ出します。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="node-version" aria-labelledby="node-version-title">
+          <h2 id="node-version-title">Node version 解決</h2>
+          <p>
+            このブロックは GitHub Action 側の
+            <code>src/node-version-file.ts</code> に近い考え方です。 対応ファイルごとに parser
+            が分かれています。
+          </p>
+          <ul class="pill-list" aria-label="supported node version files">
+            <li><code>.nvmrc</code></li>
+            <li><code>.node-version</code></li>
+            <li><code>.tool-versions</code></li>
+            <li><code>package.json</code></li>
+          </ul>
+          <details open>
+            <summary>読むポイント</summary>
+            <ul>
+              <li>
+                <code>normalizeNodeVersion()</code> は先頭の <code>v</code> を取り、<code
+                  >node</code
+                >
+                / <code>stable</code> を <code>latest</code> に変換します。
+              </li>
+              <li>
+                <code>parsePlainNodeVersionFile()</code>
+                は空行とコメントを無視して最初の値を使います。
+              </li>
+              <li>
+                <code>parseToolVersionsNode()</code> は <code>nodejs</code> または
+                <code>node</code> の行だけを見ます。
+              </li>
+              <li>
+                <code>parsePackageJsonNode()</code> は
+                <code>devEngines.runtime</code> を優先し、その後
+                <code>engines.node</code> を見ます。
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="run-install" aria-labelledby="run-install-title">
+          <h2 id="run-install-title">run-install 解釈</h2>
+          <p>
+            <code>run-install</code> は GitLab input では文字列として runtime に渡ってきます。
+            そのため <code>true</code> / <code>false</code>、JSON、限定的な YAML
+            をこのファイル内で解釈しています。
+          </p>
+          <pre tabindex="0"><code>run-install: true
+run-install: false
+run-install: {"cwd":"app","args":["--frozen-lockfile"]}
+run-install: |
+  - cwd: ./packages/app
+    args: ['--frozen-lockfile']
+  - cwd: ./packages/lib</code></pre>
+          <details>
+            <summary>parser の読み方</summary>
+            <ol>
+              <li><code>parseRunInstall()</code> から入ります。</li>
+              <li><code>normalizeRunInstall()</code> が boolean 文字列と JSON を処理します。</li>
+              <li>JSON ではない場合だけ <code>parseYamlSubset()</code> に落ちます。</li>
+              <li><code>cwd</code> と <code>args</code> 以外の key は明示的に reject します。</li>
+            </ol>
+          </details>
+          <p class="note">
+            ここは汎用 YAML parser ではありません。GitLab input として必要な subset
+            だけを受け付ける実装です。
+          </p>
+        </section>
+
+        <section id="auth" aria-labelledby="auth-title">
+          <h2 id="auth-title">registry auth</h2>
+          <p>
+            <code>configureAuth()</code> は <code>registry-url</code> があるときだけ動きます。 一時
+            <code>.npmrc</code> を作り、npm と pnpm がそのファイルを見るように環境変数を設定します。
+          </p>
+          <pre tabindex="0"><code>//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+@myorg:registry=https://npm.pkg.github.com/</code></pre>
+          <details open>
+            <summary>重要な設計</summary>
+            <ul>
+              <li>
+                <code>${NODE_AUTH_TOKEN}</code> はファイルに literal
+                として書きます。実値を直接書かないためです。
+              </li>
+              <li>
+                <code>NODE_AUTH_TOKEN</code> が未設定なら placeholder を入れ、package manager 側の
+                env 展開エラーを避けます。
+              </li>
+              <li>
+                GitLab job の後続 <code>script:</code> でも同じ auth を使えるように、必要な export
+                を <code>SETUP_VP_ENV_FILE</code> へ追記します。
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <section id="sfw" aria-labelledby="sfw-title">
+          <h2 id="sfw-title">sfw</h2>
+          <p>
+            <code>setupSfw()</code> は <code>sfw: true</code> かつ
+            <code>run-install</code> が有効なときだけ、 <code>vp install</code> を
+            <code>sfw vp install</code> に切り替える準備をします。
+          </p>
+          <table>
+            <caption>
+              sfw の分岐
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">条件</th>
+                <th scope="col">結果</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>SETUP_VP_SFW !== "true"</code></td>
+                <td>通常の <code>vp install</code>。</td>
+              </tr>
+              <tr>
+                <td><code>run-install</code> が空</td>
+                <td>sfw は準備しません。</td>
+              </tr>
+              <tr>
+                <td>既存の <code>sfw</code> が <code>PATH</code> にある</td>
+                <td>それを再利用します。</td>
+              </tr>
+              <tr>
+                <td>対応 platform / arch</td>
+                <td>SocketDev の pinned release から binary を落として使います。</td>
+              </tr>
+              <tr>
+                <td>未対応 platform / arch</td>
+                <td>warning を出して通常の <code>vp install</code> に戻します。</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="env-bridge" aria-labelledby="env-bridge-title">
+          <h2 id="env-bridge-title">GitLab shell への引き継ぎ</h2>
+          <p>
+            この runtime は child process として実行されるため、Node.js 内で変更した
+            <code>process.env</code> は そのままでは GitLab job の
+            <code>script:</code> に戻りません。そこで <code>SETUP_VP_ENV_FILE</code> を使います。
+          </p>
+          <div class="flow">
+            <div class="step">
+              <span class="step-number">1</span>
+              <div class="step-body">
+                <strong><code>setup-vp.yml</code></strong>
+                <span
+                  >一時 env ファイルを作り、<code>SETUP_VP_ENV_FILE</code> として bootstrap/runtime
+                  に渡します。</span
+                >
+              </div>
+            </div>
+            <div class="step">
+              <span class="step-number">2</span>
+              <div class="step-body">
+                <strong><code>bootstrap.sh</code></strong>
+                <span
+                  >Vite+ の bin directory を追加した <code>PATH</code> を env
+                  ファイルへ書きます。</span
+                >
+              </div>
+            </div>
+            <div class="step">
+              <span class="step-number">3</span>
+              <div class="step-body">
+                <strong><code>setup-vp.mjs</code></strong>
+                <span
+                  >auth 変数や、download した sfw の <code>PATH</code> を env
+                  ファイルへ追記します。</span
+                >
+              </div>
+            </div>
+            <div class="step">
+              <span class="step-number">4</span>
+              <div class="step-body">
+                <strong><code>setup-vp.yml</code></strong>
+                <span
+                  >bootstrap 終了後に env ファイルを source し、ユーザーの
+                  <code>script:</code> へ設定を残します。</span
+                >
+              </div>
+            </div>
+          </div>
+          <pre tabindex="0"><code>export PATH='/home/gitlab/.vite-plus/bin:...'
+export NPM_CONFIG_USERCONFIG='/tmp/setup-vp-npmrc.12345'
+export PNPM_CONFIG_USERCONFIG='/tmp/setup-vp-npmrc.12345'
+export NODE_AUTH_TOKEN='XXXXX-XXXXX-XXXXX-XXXXX'</code></pre>
+        </section>
+
+        <section id="reading-checklist" aria-labelledby="reading-checklist-title">
+          <h2 id="reading-checklist-title">読解チェック</h2>
+          <p>一通り読んだあと、次の問いに答えられれば十分に理解できています。</p>
+          <ol>
+            <li>
+              <code>node-version-file</code> と
+              <code>node-version</code> が両方あると、どちらが使われるか。
+            </li>
+            <li><code>run-install: false</code> のとき、<code>sfw</code> はどう扱われるか。</li>
+            <li>
+              <code>registry-url</code> 指定時に、実 token が
+              <code>.npmrc</code> へ直接書かれない理由。
+            </li>
+            <li>
+              download した <code>sfw</code> の <code>PATH</code> を GitLab job shell
+              に戻す必要がある理由。
+            </li>
+            <li><code>run()</code> が non-zero exit を受けたときに、後続処理がどうなるか。</li>
+          </ol>
+          <p class="muted">
+            迷ったら <code>main()</code> に戻り、呼び出される helper
+            を一つずつ読むのが一番安定します。
+          </p>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

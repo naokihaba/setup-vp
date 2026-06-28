@@ -1,0 +1,73 @@
+spec:
+  inputs:
+    version:
+      description: "Version of Vite+ to install"
+      default: "latest"
+    node-version:
+      description: "Node.js version to install via `vp env use`."
+      default: "lts"
+    node-version-file:
+      description: "Path to file containing the Node.js version spec (.nvmrc, .node-version, .tool-versions, package.json). Takes precedence over node-version when specified."
+      default: ""
+    working-directory:
+      description: "Project directory used for relative paths and default `vp install` execution."
+      default: "."
+    run-install:
+      description: "Run `vp install` after setup. Accepts boolean or YAML object with cwd/args."
+      default: "true"
+    sfw:
+      description: "Wrap `vp install` with Socket Firewall Free (`sfw`) to block malicious dependency fetches."
+      type: boolean
+      default: false
+    registry-url:
+      description: "Optional registry URL to write to a temporary .npmrc. Auth token is read from NODE_AUTH_TOKEN."
+      default: ""
+    scope:
+      description: "Optional scope for authenticating against scoped registries."
+      default: ""
+    setup-ref:
+      description: "setup-vp ref used to download the GitLab bootstrap and Node runtime. Pin this to the same tag or commit as the remote template for strict reproducibility."
+      default: "v1"
+---
+.setup-vp:
+  before_script:
+    - |
+      set -eu
+
+      setup_vp_download() {
+        setup_vp_url="$1"
+        setup_vp_out="$2"
+
+        if command -v curl >/dev/null 2>&1; then
+          curl -fsSL --connect-timeout 5 --max-time 60 "$setup_vp_url" -o "$setup_vp_out"
+        elif command -v wget >/dev/null 2>&1; then
+          wget -qO "$setup_vp_out" "$setup_vp_url"
+        else
+          echo "setup-vp: curl or wget is required to download the GitLab bootstrap." >&2
+          return 127
+        fi
+      }
+
+      export SETUP_VP_VERSION="$[[ inputs.version ]]"
+      export SETUP_VP_NODE_VERSION="$[[ inputs.node-version ]]"
+      export SETUP_VP_NODE_VERSION_FILE="$[[ inputs.node-version-file ]]"
+      export SETUP_VP_WORKING_DIRECTORY="$[[ inputs.working-directory ]]"
+      SETUP_VP_RUN_INSTALL="$(cat <<'SETUP_VP_RUN_INSTALL_EOF'
+      $[[ inputs.run-install ]]
+      SETUP_VP_RUN_INSTALL_EOF
+      )"
+      export SETUP_VP_RUN_INSTALL
+      export SETUP_VP_SFW="$[[ inputs.sfw ]]"
+      export SETUP_VP_REGISTRY_URL="$[[ inputs.registry-url ]]"
+      export SETUP_VP_SCOPE="$[[ inputs.scope ]]"
+      export SETUP_VP_SETUP_REF="$[[ inputs.setup-ref ]]"
+
+      setup_vp_bootstrap_tmp="${TMPDIR:-/tmp}/setup-vp-gitlab-bootstrap.$$"
+      setup_vp_env_tmp="${TMPDIR:-/tmp}/setup-vp-gitlab-env.$$"
+      : > "$setup_vp_env_tmp"
+      export SETUP_VP_ENV_FILE="$setup_vp_env_tmp"
+      trap 'rm -f "$setup_vp_bootstrap_tmp" "$setup_vp_env_tmp"' EXIT
+      setup_vp_bootstrap_url="https://raw.githubusercontent.com/voidzero-dev/setup-vp/${SETUP_VP_SETUP_REF}/gitlab/bootstrap.sh"
+      setup_vp_download "$setup_vp_bootstrap_url" "$setup_vp_bootstrap_tmp"
+      bash "$setup_vp_bootstrap_tmp"
+      . "$setup_vp_env_tmp"

@@ -73,9 +73,7 @@ setup_vp_install_viteplus
 export PATH="$HOME/.vite-plus/bin:$PATH"
 setup_vp_export_env PATH "$PATH"
 
-if ! command -v node >/dev/null 2>&1; then
-  vp env use "$SETUP_VP_NODE_VERSION"
-fi
+vp env use "$SETUP_VP_NODE_VERSION"
 
 setup_vp_runtime_url="https://raw.githubusercontent.com/voidzero-dev/setup-vp/${SETUP_VP_SETUP_REF}/gitlab/setup-vp.mjs"
 setup_vp_download "$setup_vp_runtime_url" "$setup_vp_runtime_tmp"

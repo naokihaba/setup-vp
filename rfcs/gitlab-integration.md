@@ -139,18 +139,19 @@ spec:
 Implementation logic is split to keep shell small:
 
 - `gitlab/setup-vp.yml` handles GitLab inputs and downloads `bootstrap.sh`.
-- `gitlab/bootstrap.sh` installs Vite+, ensures a bootstrap Node is available
-  through `vp env use` when `node` is not already on `PATH`, downloads
+- `gitlab/bootstrap.sh` installs Vite+, runs `vp env use <node-version>` to
+  ensure the runtime starts with the requested bootstrap Node, downloads
   `setup-vp.mjs`, and runs it.
 - `gitlab/setup-vp.mjs` handles maintainable logic: node-version-file parsing,
   registry auth, `sfw`, `run-install` parsing, install execution, and final
   version output.
 
-This avoids requiring users to choose a Node image before using setup-vp. If the
-runner already has Node, bootstrap reuses it. If not, bootstrap installs Vite+
-first and uses `vp env use <node-version>` only to make enough Node available to
-run `setup-vp.mjs`. When `node-version-file` later resolves to a different
-version, the Node runtime runs `vp env use` again with the final version.
+This avoids requiring users to choose a Node image before using setup-vp.
+Bootstrap installs Vite+ first and uses `vp env use <node-version>` to make
+enough requested Node available to run `setup-vp.mjs`, even when the runner
+image already contains an older `node` binary. When `node-version-file` later
+resolves to a different version, the Node runtime runs `vp env use` again with
+the final version.
 
 Remote includes do not provide a portable way for the included YAML to discover
 the exact Git ref used in the `include:remote` URL. For that reason the template
@@ -174,8 +175,8 @@ The hidden job runs in `before_script` so that the user's `script` can assume
 3. Install Vite+ from `https://viteplus.dev/install.sh`.
 4. Fall back to the raw GitHub installer if the primary installer fails.
 5. Add `~/.vite-plus/bin` to `PATH`.
-6. Install bootstrap Node with `vp env use <node-version>` only when `node` is
-   missing.
+6. Install bootstrap Node with `vp env use <node-version>` before starting the
+   Node runtime.
 7. Download and execute `setup-vp.mjs` from `setup-ref`.
 8. Resolve `working-directory`.
 9. Resolve `node-version-file` when provided.
@@ -226,7 +227,7 @@ wins; otherwise `node-version` wins.
 The default matches GitHub Actions:
 
 ```yaml
-run-install: true
+run-install: "true"
 ```
 
 The GitLab template also supports multiple install entries:
@@ -260,7 +261,7 @@ include:
   - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
     inputs:
       sfw: true
-      run-install: true
+      run-install: "true"
 ```
 
 If `sfw` is already on `PATH`, the template reuses it. Otherwise it downloads a

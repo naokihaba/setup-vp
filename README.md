@@ -282,7 +282,7 @@ include:
       version: "latest"
       node-version: "22"
       working-directory: "web"
-      run-install: true
+      run-install: "true"
 
 test:
   extends: .setup-vp
@@ -364,7 +364,7 @@ include:
   - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
     inputs:
       sfw: true
-      run-install: true
+      run-install: "true"
 
 test:
   extends: .setup-vp

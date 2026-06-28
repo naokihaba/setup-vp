@@ -1,6 +1,6 @@
 # setup-vp
 
-GitHub Action to set up [Vite+](https://viteplus.dev) (`vp`) with dependency caching support.
+GitHub Action and GitLab CI/CD remote template to set up [Vite+](https://viteplus.dev) (`vp`).
 
 ## Features
 
@@ -10,6 +10,7 @@ GitHub Action to set up [Vite+](https://viteplus.dev) (`vp`) with dependency cac
 - Optionally run `vp install` after setup
 - Optionally wrap `vp install` with [Socket Firewall Free (`sfw`)](https://docs.socket.dev/docs/socket-firewall-free) to block malicious dependencies
 - Support for all major package managers (npm, pnpm, yarn, bun)
+- GitLab CI/CD support through a reusable `include:remote` template
 
 ## Usage
 
@@ -252,6 +253,169 @@ The dependency cache key format is: `vite-plus-{OS}-{arch}-{pm}-{lockfile-hash}`
 When `working-directory` is set, lockfile auto-detection runs in that directory.
 
 When `cache-dependency-path` points to a lock file in a subdirectory, the action resolves the package-manager cache directory from that lock file's directory.
+
+## GitLab CI/CD
+
+setup-vp also provides a GitLab CI/CD remote template hosted from this GitHub repository. Because this repository is not a GitLab CI/CD component project, GitLab users should load it with `include:remote` instead of `include:component`.
+
+See [GitLab integration notes](rfcs/gitlab-integration.md) for the design background, constraints, and follow-up work.
+
+### Basic GitLab Usage
+
+```yaml
+include:
+  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
+
+test:
+  extends: .setup-vp
+  image: node:24
+  script:
+    - vp run test
+```
+
+### With GitLab Inputs
+
+```yaml
+include:
+  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
+    inputs:
+      version: "latest"
+      node-version: "22"
+      working-directory: "web"
+      run-install: true
+
+test:
+  extends: .setup-vp
+  image: node:24
+  script:
+    - vp run test
+```
+
+### With Pinned GitLab Runtime
+
+When using an immutable tag or commit SHA, pin `setup-ref` to the same ref so the bootstrap and Node runtime are downloaded from the same version as the included template:
+
+```yaml
+include:
+  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1.0.0/gitlab/setup-vp.yml"
+    inputs:
+      setup-ref: "v1.0.0"
+
+test:
+  extends: .setup-vp
+  image: node:24
+  script:
+    - vp run test
+```
+
+### Advanced GitLab Run Install
+
+```yaml
+include:
+  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
+    inputs:
+      node-version: "lts"
+      run-install: |
+        - cwd: ./packages/app
+          args: ['--frozen-lockfile']
+        - cwd: ./packages/lib
+
+test:
+  extends: .setup-vp
+  image: node:24
+  script:
+    - vp run test
+```
+
+### With GitLab Node.js Version
+
+```yaml
+include:
+  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
+    inputs:
+      node-version: "lts"
+
+test:
+  extends: .setup-vp
+  image: node:24
+  script:
+    - vp run test
+```
+
+### With GitLab Node.js Version File
+
+```yaml
+include:
+  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
+    inputs:
+      node-version-file: ".node-version"
+
+test:
+  extends: .setup-vp
+  image: node:24
+  script:
+    - vp run test
+```
+
+### With GitLab Socket Firewall Free (sfw)
+
+```yaml
+include:
+  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
+    inputs:
+      sfw: true
+      run-install: true
+
+test:
+  extends: .setup-vp
+  image: node:24
+  script:
+    - vp run test
+```
+
+### With Private Registry
+
+Pass `NODE_AUTH_TOKEN` as a GitLab CI/CD variable and set `registry-url` when the job needs an authenticated npm registry:
+
+```yaml
+include:
+  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
+    inputs:
+      registry-url: "https://npm.pkg.github.com"
+      scope: "@myorg"
+
+test:
+  extends: .setup-vp
+  image: node:24
+  variables:
+    NODE_AUTH_TOKEN: "$NPM_TOKEN"
+  script:
+    - vp run test
+```
+
+### GitLab Inputs
+
+| Input               | Description                                                                                      | Default  |
+| ------------------- | ------------------------------------------------------------------------------------------------ | -------- |
+| `version`           | Version of Vite+ to install                                                                      | `latest` |
+| `node-version`      | Node.js version to install via `vp env use`                                                      | `lts`    |
+| `node-version-file` | Path to `.nvmrc`, `.node-version`, `.tool-versions`, or `package.json`                           |          |
+| `working-directory` | Project directory used for relative paths and default `vp install` execution                     | `.`      |
+| `run-install`       | Run `vp install` after setup. Accepts boolean or YAML object with `cwd`/`args`                   | `true`   |
+| `sfw`               | Wrap `vp install` with [Socket Firewall Free](https://docs.socket.dev/docs/socket-firewall-free) | `false`  |
+| `registry-url`      | Optional registry URL to write to a temporary `.npmrc`                                           |          |
+| `scope`             | Optional scope for authenticating against scoped registries                                      |          |
+| `setup-ref`         | setup-vp ref used to download the GitLab bootstrap and Node runtime                              | `v1`     |
+
+### GitLab Notes
+
+- Use a tag such as `v1` or `v1.0.0` in the remote URL instead of `main`.
+- Pin `setup-ref` to the same tag or commit SHA as the remote URL when strict reproducibility is required.
+- GitLab 17.9+ users can add `integrity` to pin the remote file hash.
+- The template expects a Unix-like runner image with `bash` and either `curl` or `wget`; Node.js does not need to be preinstalled.
+- `node-version-file` takes precedence over `node-version` when both are specified.
+- The GitLab template supports `.nvmrc`, `.node-version`, `.tool-versions`, and `package.json` for `node-version-file`.
+- The GitLab template intentionally does not expose `cache` or `cache-dependency-path` inputs. GitLab restores job cache before `before_script`, so this template cannot compute cache paths during setup and restore them for the same job. Configure GitLab `cache:` directly on the job when needed.
 
 ## Example Workflow
 

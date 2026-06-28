@@ -7,10 +7,12 @@ The template lets GitLab users install Vite+, set up Node.js through
 `vp env use`, configure registry auth, and optionally run `vp install` while
 keeping the source of truth in this GitHub repository.
 
-The template is published as a plain YAML file:
+The template is published as a plain YAML file plus two runtime files:
 
 ```text
 gitlab/setup-vp.yml
+gitlab/bootstrap.sh
+gitlab/setup-vp.mjs
 ```
 
 GitLab users load it with `include:remote`:
@@ -57,7 +59,8 @@ Relevant GitLab documentation:
 7. Support private registry auth through `registry-url`, `scope`, and
    `NODE_AUTH_TOKEN`.
 8. Support `sfw: true` for `vp install`.
-9. Document where GitLab behavior cannot match GitHub Actions.
+9. Avoid requiring users to provide Node.js before setup starts.
+10. Document where GitLab behavior cannot match GitHub Actions.
 
 ## Non-Goals
 
@@ -96,10 +99,11 @@ components resolved from a GitLab component project, which conflicts with the
 
 ### Template Shape
 
-`gitlab/setup-vp.yml` defines two YAML documents:
+`gitlab/setup-vp.yml` defines two YAML documents and intentionally stays thin:
 
 1. `spec:inputs` for GitLab include inputs.
-2. A hidden `.setup-vp` job that users extend from their jobs.
+2. A hidden `.setup-vp` job that exports inputs, downloads `bootstrap.sh`, and
+   executes it.
 
 ```yaml
 spec:
@@ -121,11 +125,43 @@ spec:
       default: ""
     scope:
       default: ""
+    setup-ref:
+      default: "v1"
 ---
 .setup-vp:
   before_script:
     - |
-      # install Vite+, set up Node.js, auth, sfw, and optional vp install
+      # export inputs, download bootstrap.sh, and execute it
+```
+
+### Bootstrap And Runtime
+
+Implementation logic is split to keep shell small:
+
+- `gitlab/setup-vp.yml` handles GitLab inputs and downloads `bootstrap.sh`.
+- `gitlab/bootstrap.sh` installs Vite+, ensures a bootstrap Node is available
+  through `vp env use` when `node` is not already on `PATH`, downloads
+  `setup-vp.mjs`, and runs it.
+- `gitlab/setup-vp.mjs` handles maintainable logic: node-version-file parsing,
+  registry auth, `sfw`, `run-install` parsing, install execution, and final
+  version output.
+
+This avoids requiring users to choose a Node image before using setup-vp. If the
+runner already has Node, bootstrap reuses it. If not, bootstrap installs Vite+
+first and uses `vp env use <node-version>` only to make enough Node available to
+run `setup-vp.mjs`. When `node-version-file` later resolves to a different
+version, the Node runtime runs `vp env use` again with the final version.
+
+Remote includes do not provide a portable way for the included YAML to discover
+the exact Git ref used in the `include:remote` URL. For that reason the template
+has a `setup-ref` input. The default points at `v1`, and users who need strict
+reproducibility should pass the same tag or commit SHA as the template include.
+
+```yaml
+include:
+  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1.0.0/gitlab/setup-vp.yml"
+    inputs:
+      setup-ref: "v1.0.0"
 ```
 
 ### Execution Flow
@@ -133,16 +169,21 @@ spec:
 The hidden job runs in `before_script` so that the user's `script` can assume
 `vp` is available.
 
-1. Resolve `working-directory`.
-2. Install Vite+ from `https://viteplus.dev/install.sh`.
-3. Fall back to the raw GitHub installer if the primary installer fails.
-4. Add `~/.vite-plus/bin` to `PATH`.
-5. Resolve `node-version-file` when provided.
-6. Run `vp env use <resolved version>` when a Node.js version is available.
-7. Configure temporary npm auth when `registry-url` is set.
-8. Install or detect `sfw` when `sfw: true`.
-9. Run `vp install` when `run-install` is enabled.
-10. Print `vp --version`.
+1. Export GitLab inputs into `SETUP_VP_*` environment variables.
+2. Download and execute `bootstrap.sh` from `setup-ref`.
+3. Install Vite+ from `https://viteplus.dev/install.sh`.
+4. Fall back to the raw GitHub installer if the primary installer fails.
+5. Add `~/.vite-plus/bin` to `PATH`.
+6. Install bootstrap Node with `vp env use <node-version>` only when `node` is
+   missing.
+7. Download and execute `setup-vp.mjs` from `setup-ref`.
+8. Resolve `working-directory`.
+9. Resolve `node-version-file` when provided.
+10. Run `vp env use <resolved version>` when a Node.js version is available.
+11. Configure temporary npm auth when `registry-url` is set.
+12. Install or detect `sfw` when `sfw: true`.
+13. Run `vp install` when `run-install` is enabled.
+14. Print `vp --version`.
 
 ### Node.js Version Resolution
 
@@ -171,7 +212,7 @@ Supported files:
 - `.tool-versions`
 - `package.json`
 
-For `package.json`, the template reads `devEngines.runtime` for a `node` entry
+For `package.json`, the Node runtime reads `devEngines.runtime` for a `node` entry
 first, then falls back to `engines.node`, matching the GitHub Action logic.
 
 There is one GitLab-specific caveat: because `spec:inputs` applies the
@@ -239,6 +280,7 @@ back to plain `vp install`.
 | `sfw`               | `false`  | Wrap `vp install` with Socket Firewall Free.                                  |
 | `registry-url`      |          | Optional registry URL to write to a temporary `.npmrc`.                       |
 | `scope`             |          | Optional scope for authenticating against scoped registries.                  |
+| `setup-ref`         | `v1`     | Ref used to download `bootstrap.sh` and `setup-vp.mjs`.                       |
 
 ## GitHub Action Parity
 
@@ -293,6 +335,9 @@ pinning:
 - Prefer `v1`, an immutable version tag such as `v1.0.0`, or a commit SHA.
 - Avoid `main` in production pipelines.
 - Use `include:integrity` where available for stricter remote file validation.
+- Pin `setup-ref` to the same immutable tag or commit SHA when strict
+  reproducibility is required. `include:integrity` validates the included YAML,
+  not the bootstrap or Node runtime downloaded by that YAML.
 
 The template downloads installers and optional `sfw` binaries at runtime. The
 downloaded `sfw` version is pinned in the template for reproducibility. Users
@@ -302,8 +347,10 @@ before extending `.setup-vp`; the template will reuse `sfw` from `PATH`.
 ## Rollout
 
 1. Add `gitlab/setup-vp.yml`.
-2. Add this RFC under `docs/`.
-3. Document GitLab usage in `README.md`.
-4. Validate YAML parsing and shell syntax locally.
-5. Validate the remote include through GitLab CI Lint before release.
-6. Release under `v1` and an immutable semver tag.
+2. Add `gitlab/bootstrap.sh`.
+3. Add `gitlab/setup-vp.mjs`.
+4. Add this RFC under `rfcs/`.
+5. Document GitLab usage in `README.md`.
+6. Validate YAML parsing and shell/Node syntax locally.
+7. Validate the remote include through GitLab CI Lint before release.
+8. Release under `v1` and an immutable semver tag.

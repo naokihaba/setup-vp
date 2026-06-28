@@ -2,7 +2,7 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "gitlab/**/*.test.mjs"],
   },
   staged: {
     "*": "vp check --fix",

@@ -55,14 +55,51 @@ function parseKeyValue(line: string): [string, string] | undefined {
   return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
 }
 
-function assignValue(target: RunInstallEntry, key: string, value: string): void {
+function countIndent(line: string): number {
+  return line.length - line.trimStart().length;
+}
+
+function parseBlockArray(
+  lines: string[],
+  startIndex: number,
+  parentIndent: number,
+): { values: string[]; nextIndex: number } {
+  const values: string[] = [];
+  let index = startIndex;
+
+  while (index < lines.length) {
+    const rawLine = lines[index];
+    const indent = countIndent(rawLine);
+    const trimmedStart = rawLine.trimStart();
+    if (indent <= parentIndent) break;
+    if (!trimmedStart.startsWith("-")) {
+      throw new Error(`invalid args line: ${rawLine}`);
+    }
+
+    const value = trimmedStart.slice(1).trim();
+    if (!value) {
+      throw new Error(`args entries must be strings: ${rawLine}`);
+    }
+    values.push(parseScalar(value));
+    index += 1;
+  }
+
+  if (values.length === 0) {
+    throw new Error("args must be an array");
+  }
+
+  return { values, nextIndex: index };
+}
+
+function assignValue(target: RunInstallEntry, key: string, value: string): boolean {
   if (key === "cwd") {
     target.cwd = parseScalar(value);
-    return;
+    return false;
   }
   if (key === "args") {
+    if (!value) return true;
     target.args = parseFlowArray(value);
-    return;
+    return false;
   }
   throw new Error(`unsupported run-install key: ${key}`);
 }
@@ -111,12 +148,18 @@ function validateRunInstallInput(value: unknown): RunInstallInput {
 
 function parseObject(lines: string[]): RunInstallEntry {
   const item: RunInstallEntry = {};
-  for (const rawLine of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index];
     const line = rawLine.trim();
     if (!line || line.startsWith("#")) continue;
     const entry = parseKeyValue(line);
     if (!entry) throw new Error(`invalid run-install line: ${rawLine}`);
-    assignValue(item, entry[0], entry[1]);
+    const expectsBlockArray = assignValue(item, entry[0], entry[1]);
+    if (expectsBlockArray) {
+      const parsed = parseBlockArray(lines, index + 1, countIndent(rawLine));
+      item.args = parsed.values;
+      index = parsed.nextIndex - 1;
+    }
   }
   return item;
 }
@@ -129,18 +172,26 @@ export function parseYamlSubset(value: string): RunInstallEntry[] {
     return [parseObject(lines)];
   }
 
+  const topLevelIndent = countIndent(lines[0]);
   const items: RunInstallEntry[] = [];
   let current: RunInstallEntry | undefined = undefined;
-  for (const rawLine of lines) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index];
+    const indent = countIndent(rawLine);
     const trimmedStart = rawLine.trimStart();
-    if (trimmedStart.startsWith("-")) {
+    if (indent === topLevelIndent && trimmedStart.startsWith("-")) {
       if (current) items.push(current);
       current = {};
       const rest = trimmedStart.slice(1).trim();
       if (rest) {
         const entry = parseKeyValue(rest);
         if (!entry) throw new Error(`invalid run-install line: ${rawLine}`);
-        assignValue(current, entry[0], entry[1]);
+        const expectsBlockArray = assignValue(current, entry[0], entry[1]);
+        if (expectsBlockArray) {
+          const parsed = parseBlockArray(lines, index + 1, indent);
+          current.args = parsed.values;
+          index = parsed.nextIndex - 1;
+        }
       }
       continue;
     }
@@ -148,7 +199,12 @@ export function parseYamlSubset(value: string): RunInstallEntry[] {
     if (!current) throw new Error(`invalid run-install line: ${rawLine}`);
     const entry = parseKeyValue(trimmedStart);
     if (!entry) throw new Error(`invalid run-install line: ${rawLine}`);
-    assignValue(current, entry[0], entry[1]);
+    const expectsBlockArray = assignValue(current, entry[0], entry[1]);
+    if (expectsBlockArray) {
+      const parsed = parseBlockArray(lines, index + 1, indent);
+      current.args = parsed.values;
+      index = parsed.nextIndex - 1;
+    }
   }
   if (current) items.push(current);
   return items;

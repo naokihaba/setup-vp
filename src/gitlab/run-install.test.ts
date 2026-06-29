@@ -44,6 +44,15 @@ describe("GitLab run-install parsing", () => {
     ]);
   });
 
+  it("parses block YAML args", () => {
+    expect(parseRunInstall("cwd: ./packages/app\nargs:\n  - --frozen-lockfile")).toEqual([
+      { cwd: "./packages/app", args: ["--frozen-lockfile"] },
+    ]);
+    expect(
+      parseRunInstall("- cwd: ./app\n  args:\n    - --frozen-lockfile\n    - --prefer-offline"),
+    ).toEqual([{ cwd: "./app", args: ["--frozen-lockfile", "--prefer-offline"] }]);
+  });
+
   it("rejects unsupported keys", () => {
     expect(() => parseRunInstall("command: install")).toThrow(
       "unsupported run-install key: command",

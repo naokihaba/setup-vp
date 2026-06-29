@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -eu
 
+# GitLab remote includes can only start from YAML, so setup-vp.yml downloads
+# this bootstrap first. Keep this file as a thin shell entrypoint: install vp,
+# export PATH for the rest of the job, verify Node.js is available in the
+# runner image, then download and execute the compiled TypeScript runtime from
+# dist/gitlab/index.mjs.
+
 setup_vp_download() {
   setup_vp_url="$1"
   setup_vp_out="$2"
@@ -63,7 +69,6 @@ setup_vp_install_viteplus() {
 }
 
 SETUP_VP_VERSION="${SETUP_VP_VERSION:-latest}"
-SETUP_VP_NODE_VERSION="${SETUP_VP_NODE_VERSION:-lts}"
 SETUP_VP_SETUP_REF="${SETUP_VP_SETUP_REF:-v1}"
 setup_vp_install_tmp="${TMPDIR:-/tmp}/setup-vp-install.$$"
 setup_vp_runtime_tmp="${TMPDIR:-/tmp}/setup-vp-gitlab-runtime.$$.mjs"
@@ -73,8 +78,11 @@ setup_vp_install_viteplus
 export PATH="$HOME/.vite-plus/bin:$PATH"
 setup_vp_export_env PATH "$PATH"
 
-vp env use "$SETUP_VP_NODE_VERSION"
+if ! command -v node >/dev/null 2>&1; then
+  echo "setup-vp: Node.js is required in the GitLab runner image to execute the setup-vp runtime." >&2
+  return 127 2>/dev/null || exit 127
+fi
 
-setup_vp_runtime_url="https://raw.githubusercontent.com/voidzero-dev/setup-vp/${SETUP_VP_SETUP_REF}/gitlab/setup-vp.mjs"
+setup_vp_runtime_url="https://raw.githubusercontent.com/voidzero-dev/setup-vp/${SETUP_VP_SETUP_REF}/dist/gitlab/index.mjs"
 setup_vp_download "$setup_vp_runtime_url" "$setup_vp_runtime_tmp"
 node "$setup_vp_runtime_tmp"

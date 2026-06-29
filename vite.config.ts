@@ -2,13 +2,16 @@ import { defineConfig } from "vite-plus";
 
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts", "gitlab/**/*.test.mjs"],
+    include: ["src/**/*.test.ts"],
   },
   staged: {
     "*": "vp check --fix",
   },
   pack: {
-    entry: ["./src/index.ts"],
+    entry: {
+      index: "./src/index.ts",
+      "gitlab/index": "./src/gitlab/index.ts",
+    },
     format: ["esm"],
     outDir: "dist",
     deps: {

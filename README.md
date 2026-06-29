@@ -280,7 +280,6 @@ include:
   - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
     inputs:
       version: "latest"
-      node-version: "22"
       working-directory: "web"
       run-install: "true"
 
@@ -293,7 +292,7 @@ test:
 
 ### With Pinned GitLab Runtime
 
-When using an immutable tag or commit SHA, pin `setup-ref` to the same ref so the bootstrap and Node runtime are downloaded from the same version as the included template:
+When using an immutable tag or commit SHA, pin `setup-ref` to the same ref so the bootstrap and compiled runtime are downloaded from the same version as the included template:
 
 ```yaml
 include:
@@ -314,41 +313,10 @@ test:
 include:
   - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
     inputs:
-      node-version: "lts"
       run-install: |
         - cwd: ./packages/app
           args: ['--frozen-lockfile']
         - cwd: ./packages/lib
-
-test:
-  extends: .setup-vp
-  image: node:24
-  script:
-    - vp run test
-```
-
-### With GitLab Node.js Version
-
-```yaml
-include:
-  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
-    inputs:
-      node-version: "lts"
-
-test:
-  extends: .setup-vp
-  image: node:24
-  script:
-    - vp run test
-```
-
-### With GitLab Node.js Version File
-
-```yaml
-include:
-  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
-    inputs:
-      node-version-file: ".node-version"
 
 test:
   extends: .setup-vp
@@ -398,23 +366,21 @@ test:
 | Input               | Description                                                                                      | Default  |
 | ------------------- | ------------------------------------------------------------------------------------------------ | -------- |
 | `version`           | Version of Vite+ to install                                                                      | `latest` |
-| `node-version`      | Node.js version to install via `vp env use`                                                      | `lts`    |
-| `node-version-file` | Path to `.nvmrc`, `.node-version`, `.tool-versions`, or `package.json`                           |          |
 | `working-directory` | Project directory used for relative paths and default `vp install` execution                     | `.`      |
 | `run-install`       | Run `vp install` after setup. Accepts boolean or YAML object with `cwd`/`args`                   | `true`   |
 | `sfw`               | Wrap `vp install` with [Socket Firewall Free](https://docs.socket.dev/docs/socket-firewall-free) | `false`  |
 | `registry-url`      | Optional registry URL to write to a temporary `.npmrc`                                           |          |
 | `scope`             | Optional scope for authenticating against scoped registries                                      |          |
-| `setup-ref`         | setup-vp ref used to download the GitLab bootstrap and Node runtime                              | `v1`     |
+| `setup-ref`         | setup-vp ref used to download the GitLab bootstrap and compiled runtime                          | `v1`     |
 
 ### GitLab Notes
 
 - Use a tag such as `v1` or `v1.0.0` in the remote URL instead of `main`.
 - Pin `setup-ref` to the same tag or commit SHA as the remote URL when strict reproducibility is required.
 - GitLab 17.9+ users can add `integrity` to pin the remote file hash.
-- The template expects a Unix-like runner image with `bash` and either `curl` or `wget`; Node.js does not need to be preinstalled.
-- `node-version-file` takes precedence over `node-version` when both are specified.
-- The GitLab template supports `.nvmrc`, `.node-version`, `.tool-versions`, and `package.json` for `node-version-file`.
+- The template expects a Unix-like runner image with Node.js, `bash`, and either `curl` or `wget`.
+- The GitLab runtime source is TypeScript under `src/gitlab/`, but the template downloads and runs the `vp pack` generated JavaScript bundle from `dist/gitlab/index.mjs`.
+- The GitLab template does not set up Node.js. Use a Node image such as `node:24`, or install Node.js before extending `.setup-vp`.
 - The GitLab template intentionally does not expose `cache` or `cache-dependency-path` inputs. GitLab restores job cache before `before_script`, so this template cannot compute cache paths during setup and restore them for the same job. Configure GitLab `cache:` directly on the job when needed.
 
 ## Example Workflow
@@ -473,7 +439,7 @@ vp install
 ### Before Committing
 
 - Run `vp run check:fix` and `vp run build`
-- The `dist/index.mjs` must be committed (it's the compiled action entry point)
+- Generated files under `dist/` must be committed, including `dist/index.mjs` for the GitHub Action and `dist/gitlab/index.mjs` for the GitLab template
 - Pre-commit hooks (via husky + lint-staged) will automatically run `vp check --fix` on staged files via `vpx lint-staged`
 
 ## Feedback

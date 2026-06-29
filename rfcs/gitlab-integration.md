@@ -3,16 +3,19 @@
 ## Summary
 
 This RFC proposes a GitLab CI/CD remote template for `voidzero-dev/setup-vp`.
-The template lets GitLab users install Vite+, set up Node.js through
-`vp env use`, configure registry auth, and optionally run `vp install` while
-keeping the source of truth in this GitHub repository.
+The template lets GitLab users install Vite+, configure registry auth, and
+optionally run `vp install` while keeping the source of truth in this GitHub
+repository.
 
-The template is published as a plain YAML file plus two runtime files:
+The template is published as a plain YAML file plus a shell bootstrap. The
+maintainable runtime is TypeScript under `src/gitlab/` and is distributed as a
+precompiled JavaScript bundle under `dist/gitlab/`.
 
 ```text
 gitlab/setup-vp.yml
 gitlab/bootstrap.sh
-gitlab/setup-vp.mjs
+src/gitlab/*.ts
+dist/gitlab/index.mjs
 ```
 
 GitLab users load it with `include:remote`:
@@ -53,14 +56,14 @@ Relevant GitLab documentation:
 2. Support `include:remote` with `spec:inputs`.
 3. Keep GitLab input names as close as possible to the GitHub Action inputs.
 4. Install Vite+ from the official installer with retry and fallback URLs.
-5. Support `node-version` and `node-version-file`.
-6. Support the default `run-install: true` experience and advanced
+5. Support the default `run-install: true` experience and advanced
    `run-install` entries with `cwd` and `args`.
-7. Support private registry auth through `registry-url`, `scope`, and
+6. Support private registry auth through `registry-url`, `scope`, and
    `NODE_AUTH_TOKEN`.
-8. Support `sfw: true` for `vp install`.
-9. Avoid requiring users to provide Node.js before setup starts.
-10. Document where GitLab behavior cannot match GitHub Actions.
+7. Support `sfw: true` for `vp install`.
+8. Require Node.js in the selected GitLab runner image, matching the model that
+   the runtime script is executed by Node.js.
+9. Document where GitLab behavior cannot match GitHub Actions.
 
 ## Non-Goals
 
@@ -90,7 +93,7 @@ include:
   - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1.0.0/gitlab/setup-vp.yml"
     integrity: "sha256-..."
     inputs:
-      node-version: "22"
+      run-install: "true"
 ```
 
 `include:component` is intentionally not used. It is designed for GitLab CI/CD
@@ -110,10 +113,6 @@ spec:
   inputs:
     version:
       default: "latest"
-    node-version:
-      default: "lts"
-    node-version-file:
-      default: ""
     working-directory:
       default: "."
     run-install:
@@ -139,19 +138,19 @@ spec:
 Implementation logic is split to keep shell small:
 
 - `gitlab/setup-vp.yml` handles GitLab inputs and downloads `bootstrap.sh`.
-- `gitlab/bootstrap.sh` installs Vite+, runs `vp env use <node-version>` to
-  ensure the runtime starts with the requested bootstrap Node, downloads
-  `setup-vp.mjs`, and runs it.
-- `gitlab/setup-vp.mjs` handles maintainable logic: node-version-file parsing,
-  registry auth, `sfw`, `run-install` parsing, install execution, and final
-  version output.
+- `gitlab/bootstrap.sh` installs Vite+, checks that Node.js is available,
+  downloads `dist/gitlab/index.mjs`, and runs it.
+- `src/gitlab/*.ts` handles maintainable logic split by responsibility:
+  registry auth, `sfw`, `run-install` parsing, install execution, shell helpers,
+  path resolution, and final orchestration.
+- `dist/gitlab/index.mjs` is generated from `src/gitlab/index.ts` by
+  `vp pack`, mirroring how the GitHub Action runs `dist/index.mjs` generated
+  from TypeScript.
 
-This avoids requiring users to choose a Node image before using setup-vp.
-Bootstrap installs Vite+ first and uses `vp env use <node-version>` to make
-enough requested Node available to run `setup-vp.mjs`, even when the runner
-image already contains an older `node` binary. When `node-version-file` later
-resolves to a different version, the Node runtime runs `vp env use` again with
-the final version.
+This intentionally requires users to choose a runner image that already contains
+Node.js, such as `node:24`. GitLab remote templates run inside the user-selected
+image, so requiring Node.js keeps the template simple and avoids bootstrapping a
+runtime before the compiled JavaScript can execute.
 
 Remote includes do not provide a portable way for the included YAML to discover
 the exact Git ref used in the `include:remote` URL. For that reason the template
@@ -165,6 +164,10 @@ include:
       setup-ref: "v1.0.0"
 ```
 
+The runtime handoff is intentionally explicit:
+
+![GitLab setup-vp runtime flow](./assets/gitlab-runtime-flow.svg)
+
 ### Execution Flow
 
 The hidden job runs in `before_script` so that the user's `script` can assume
@@ -175,52 +178,32 @@ The hidden job runs in `before_script` so that the user's `script` can assume
 3. Install Vite+ from `https://viteplus.dev/install.sh`.
 4. Fall back to the raw GitHub installer if the primary installer fails.
 5. Add `~/.vite-plus/bin` to `PATH`.
-6. Install bootstrap Node with `vp env use <node-version>` before starting the
-   Node runtime.
-7. Download and execute `setup-vp.mjs` from `setup-ref`.
+6. Verify that `node` is available in the runner image.
+7. Download and execute `dist/gitlab/index.mjs` from `setup-ref`.
 8. Resolve `working-directory`.
-9. Resolve `node-version-file` when provided.
-10. Run `vp env use <resolved version>` when a Node.js version is available.
-11. Configure temporary npm auth when `registry-url` is set.
-12. Install or detect `sfw` when `sfw: true`.
-13. Run `vp install` when `run-install` is enabled.
-14. Print `vp --version`.
+9. Configure temporary npm auth when `registry-url` is set.
+10. Install or detect `sfw` when `sfw: true`.
+11. Run `vp install` when `run-install` is enabled.
+12. Print `vp --version`.
 
-### Node.js Version Resolution
+### Node.js Runtime Requirement
 
-`node-version` defaults to `lts`, matching the GitHub Action experience.
-
-```yaml
-include:
-  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
-    inputs:
-      node-version: "lts"
-```
-
-`node-version-file` takes precedence when specified:
+The GitLab template does not expose `node-version` or `node-version-file`.
+Instead, jobs must select an image or environment where Node.js is already
+available:
 
 ```yaml
-include:
-  - remote: "https://raw.githubusercontent.com/voidzero-dev/setup-vp/v1/gitlab/setup-vp.yml"
-    inputs:
-      node-version-file: ".node-version"
+test:
+  extends: .setup-vp
+  image: node:24
+  script:
+    - vp run test
 ```
 
-Supported files:
-
-- `.nvmrc`
-- `.node-version`
-- `.tool-versions`
-- `package.json`
-
-For `package.json`, the Node runtime reads `devEngines.runtime` for a `node` entry
-first, then falls back to `engines.node`, matching the GitHub Action logic.
-
-There is one GitLab-specific caveat: because `spec:inputs` applies the
-`node-version` default before the shell sees it, the template cannot distinguish
-"the user omitted `node-version`" from "the user explicitly set `node-version:
-lts`". The chosen behavior is simple: if `node-version-file` is set, the file
-wins; otherwise `node-version` wins.
+This differs from the GitHub Action, where GitHub provides a built-in Node.js
+runtime for actions. In both cases, TypeScript source is not executed directly:
+GitHub Actions runs `dist/index.mjs`, and the GitLab template runs
+`dist/gitlab/index.mjs`.
 
 ### Run Install
 
@@ -274,22 +257,20 @@ back to plain `vp install`.
 | Input               | Default  | Description                                                                   |
 | ------------------- | -------- | ----------------------------------------------------------------------------- |
 | `version`           | `latest` | Version of Vite+ to install.                                                  |
-| `node-version`      | `lts`    | Node.js version to install via `vp env use`.                                  |
-| `node-version-file` |          | Path to `.nvmrc`, `.node-version`, `.tool-versions`, or `package.json`.       |
 | `working-directory` | `.`      | Project directory used for relative paths and default `vp install` execution. |
 | `run-install`       | `true`   | Run `vp install`; accepts boolean or YAML object/array with `cwd` and `args`. |
 | `sfw`               | `false`  | Wrap `vp install` with Socket Firewall Free.                                  |
 | `registry-url`      |          | Optional registry URL to write to a temporary `.npmrc`.                       |
 | `scope`             |          | Optional scope for authenticating against scoped registries.                  |
-| `setup-ref`         | `v1`     | Ref used to download `bootstrap.sh` and `setup-vp.mjs`.                       |
+| `setup-ref`         | `v1`     | Ref used to download `bootstrap.sh` and `dist/gitlab/index.mjs`.              |
 
 ## GitHub Action Parity
 
 | Capability              | GitHub Action | GitLab template | Notes                                        |
 | ----------------------- | ------------- | --------------- | -------------------------------------------- |
 | Install Vite+           | Yes           | Yes             | GitLab uses shell in `before_script`.        |
-| `node-version`          | Yes           | Yes             | Default is `lts` in both.                    |
-| `node-version-file`     | Yes           | Yes             | Includes `package.json`.                     |
+| `node-version`          | Yes           | No              | GitLab requires Node.js in the runner image. |
+| `node-version-file`     | Yes           | No              | GitLab requires Node.js in the runner image. |
 | `working-directory`     | Yes           | Yes             | Used for relative paths and default install. |
 | `run-install`           | Yes           | Yes             | Structured `cwd` and `args` are supported.   |
 | `registry-url`          | Yes           | Yes             | GitLab requires `NODE_AUTH_TOKEN` variable.  |
@@ -338,7 +319,7 @@ pinning:
 - Use `include:integrity` where available for stricter remote file validation.
 - Pin `setup-ref` to the same immutable tag or commit SHA when strict
   reproducibility is required. `include:integrity` validates the included YAML,
-  not the bootstrap or Node runtime downloaded by that YAML.
+  not the bootstrap or compiled runtime downloaded by that YAML.
 
 The template downloads installers and optional `sfw` binaries at runtime. The
 downloaded `sfw` version is pinned in the template for reproducibility. Users
@@ -349,9 +330,10 @@ before extending `.setup-vp`; the template will reuse `sfw` from `PATH`.
 
 1. Add `gitlab/setup-vp.yml`.
 2. Add `gitlab/bootstrap.sh`.
-3. Add `gitlab/setup-vp.mjs`.
-4. Add this RFC under `rfcs/`.
-5. Document GitLab usage in `README.md`.
-6. Validate YAML parsing and shell/Node syntax locally.
-7. Validate the remote include through GitLab CI Lint before release.
-8. Release under `v1` and an immutable semver tag.
+3. Add the `src/gitlab/` TypeScript runtime modules.
+4. Generate `dist/gitlab/index.mjs` with `vp pack`.
+5. Add this RFC under `rfcs/`.
+6. Document GitLab usage in `README.md`.
+7. Validate YAML parsing and shell/Node syntax locally.
+8. Validate the remote include through GitLab CI Lint before release.
+9. Release under `v1` and an immutable semver tag.

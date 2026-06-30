@@ -84,6 +84,12 @@ describe("GitLab run-install parsing", () => {
       "unterminated quoted string in args flow array",
     );
   });
+
+  it("matches GitHub Actions args validation by allowing empty strings", () => {
+    expect(parseRunInstall('{"args":[""]}')).toEqual([{ args: [""] }]);
+    expect(parseRunInstall("args: ['']")).toEqual([{ args: [""] }]);
+    expect(parseRunInstall("args:\n  - ''")).toEqual([{ args: [""] }]);
+  });
 });
 
 describe("GitLab run-install execution", () => {

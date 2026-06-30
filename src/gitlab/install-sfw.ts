@@ -9,6 +9,8 @@ import type { InstallCommand, RunInstallEntry } from "./types.js";
 
 const SFW_VERSION = "v1.12.0";
 const SFW_RELEASE_BASE = `https://github.com/SocketDev/sfw-free/releases/download/${SFW_VERSION}`;
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+type DownloadClient = typeof httpGet;
 
 export function isMuslLinux(): boolean {
   if (process.platform !== "linux") return false;
@@ -63,35 +65,57 @@ function sfwEnvironmentDescription(): string {
   return `process.platform=${process.platform}, process.arch=${process.arch}, musl=${isMuslLinux()}`;
 }
 
-function downloadFile(url: string, outputPath: string, redirects = 0): Promise<void> {
+export function downloadFile(
+  url: string,
+  outputPath: string,
+  redirects = 0,
+  timeoutMs = DOWNLOAD_TIMEOUT_MS,
+  clientOverride?: DownloadClient,
+): Promise<void> {
   if (redirects > 5) {
     return Promise.reject(new Error(`too many redirects while downloading ${url}`));
   }
 
-  const client = url.startsWith("https:") ? httpsGet : httpGet;
+  const client = clientOverride || (url.startsWith("https:") ? httpsGet : httpGet);
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+
     const request = client(url, (response) => {
       const statusCode = response.statusCode ?? 0;
       const location = response.headers.location;
       if (statusCode >= 300 && statusCode < 400 && location) {
         response.resume();
         const nextUrl = new URL(location, url).toString();
-        downloadFile(nextUrl, outputPath, redirects + 1).then(() => resolve(), reject);
+        downloadFile(nextUrl, outputPath, redirects + 1, timeoutMs).then(() => finish(), finish);
         return;
       }
 
       if (statusCode !== 200) {
         response.resume();
-        reject(new Error(`download failed with HTTP ${statusCode}: ${url}`));
+        finish(new Error(`download failed with HTTP ${statusCode}: ${url}`));
         return;
       }
 
       const file = createWriteStream(outputPath);
       response.pipe(file);
-      file.on("finish", () => file.close(() => resolve()));
-      file.on("error", reject);
+      file.on("finish", () => file.close(() => finish()));
+      file.on("error", finish);
     });
-    request.on("error", reject);
+
+    const timeout = setTimeout(() => {
+      request.destroy(new Error(`download timed out after ${timeoutMs}ms: ${url}`));
+    }, timeoutMs);
+    request.on("error", finish);
   });
 }
 

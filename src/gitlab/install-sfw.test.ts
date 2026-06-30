@@ -1,8 +1,9 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { EventEmitter } from "node:events";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
-import { getSfwAssetName, setupSfw } from "./install-sfw.js";
+import { downloadFile, getSfwAssetName, setupSfw } from "./install-sfw.js";
 
 const tempDirs: string[] = [];
 
@@ -49,5 +50,22 @@ describe("GitLab sfw setup", () => {
     } finally {
       process.env.PATH = previousPath;
     }
+  });
+
+  it("times out stalled downloads", async () => {
+    const dir = tempDir();
+    const stalledClient: Parameters<typeof downloadFile>[4] = () => {
+      const request = new EventEmitter() as EventEmitter & {
+        destroy(error?: Error): void;
+      };
+      request.destroy = (error?: Error) => {
+        if (error) request.emit("error", error);
+      };
+      return request as ReturnType<NonNullable<Parameters<typeof downloadFile>[4]>>;
+    };
+
+    await expect(
+      downloadFile("http://example.test/sfw", path.join(dir, "sfw"), 0, 20, stalledClient),
+    ).rejects.toThrow("download timed out after 20ms");
   });
 });

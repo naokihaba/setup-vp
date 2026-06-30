@@ -25,6 +25,16 @@ export function parseFlowArray(value: string): string[] {
   const result: string[] = [];
   let current = "";
   let quote = "";
+  let hasItem = false;
+
+  const pushCurrent = (): void => {
+    if (!current.trim()) {
+      throw new Error("args flow array entries must be non-empty strings");
+    }
+    result.push(parseScalar(current));
+    current = "";
+    hasItem = true;
+  };
 
   for (const char of body) {
     if (quote) {
@@ -38,14 +48,22 @@ export function parseFlowArray(value: string): string[] {
       continue;
     }
     if (char === ",") {
-      result.push(parseScalar(current));
-      current = "";
+      pushCurrent();
       continue;
     }
     current += char;
   }
 
-  if (current.trim()) result.push(parseScalar(current));
+  if (quote) {
+    throw new Error("unterminated quoted string in args flow array");
+  }
+
+  if (current.trim()) {
+    pushCurrent();
+  } else if (!hasItem) {
+    throw new Error("args flow array entries must be non-empty strings");
+  }
+
   return result;
 }
 

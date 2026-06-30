@@ -72,6 +72,18 @@ describe("GitLab run-install parsing", () => {
   it("parses quoted flow array items", () => {
     expect(parseFlowArray("['--filter', \"@scope/app\"]")).toEqual(["--filter", "@scope/app"]);
   });
+
+  it("rejects malformed flow array items", () => {
+    expect(() => parseFlowArray("['--a',, '--b']")).toThrow(
+      "args flow array entries must be non-empty strings",
+    );
+    expect(() => parseRunInstall("args: ['--a',, '--b']")).toThrow(
+      "args flow array entries must be non-empty strings",
+    );
+    expect(() => parseFlowArray("['--a', '--b]")).toThrow(
+      "unterminated quoted string in args flow array",
+    );
+  });
 });
 
 describe("GitLab run-install execution", () => {

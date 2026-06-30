@@ -1,3 +1,4 @@
+import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { configureAuth } from "./auth.js";
 import { setupSfw } from "./install-sfw.js";
@@ -23,7 +24,11 @@ export async function main(): Promise<void> {
   run("vp", ["--version"]);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+export function isEntrypoint(argvPath = process.argv[1], moduleUrl = import.meta.url): boolean {
+  return Boolean(argvPath && moduleUrl === pathToFileURL(path.resolve(argvPath)).href);
+}
+
+if (isEntrypoint()) {
   try {
     await main();
   } catch (error) {

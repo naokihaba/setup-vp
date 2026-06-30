@@ -14,7 +14,7 @@ setup_vp_download() {
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL --connect-timeout 5 --max-time 60 "$setup_vp_url" -o "$setup_vp_out"
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$setup_vp_out" "$setup_vp_url"
+    wget -q -T 60 -t 2 -O "$setup_vp_out" "$setup_vp_url"
   else
     echo "setup-vp: curl or wget is required to download files." >&2
     return 127

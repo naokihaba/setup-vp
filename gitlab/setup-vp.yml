@@ -7,7 +7,7 @@ spec:
       description: "Project directory used for relative paths and default `vp install` execution."
       default: "."
     run-install:
-      description: "Run `vp install` after setup. Accepts boolean or YAML object with cwd/args."
+      description: 'Run `vp install` after setup. This is a string input: use "true"/"false" or a YAML object/list with cwd/args.'
       default: "true"
     sfw:
       description: "Wrap `vp install` with Socket Firewall Free (`sfw`) to block malicious dependency fetches."

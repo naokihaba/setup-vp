@@ -40,7 +40,16 @@ setup_vp_export_env() {
 setup_vp_install_viteplus_from() {
   setup_vp_url="$1"
   setup_vp_download "$setup_vp_url" "$setup_vp_install_tmp"
-  VP_VERSION="$SETUP_VP_VERSION" VITE_PLUS_VERSION="$SETUP_VP_VERSION" bash "$setup_vp_install_tmp"
+  if [ -n "$setup_vp_pr_version" ]; then
+    VP_VERSION="$SETUP_VP_VERSION" \
+      VITE_PLUS_VERSION="$SETUP_VP_VERSION" \
+      VP_PR_VERSION="$setup_vp_pr_version" \
+      bash "$setup_vp_install_tmp"
+  else
+    VP_VERSION="$SETUP_VP_VERSION" \
+      VITE_PLUS_VERSION="$SETUP_VP_VERSION" \
+      bash "$setup_vp_install_tmp"
+  fi
 }
 
 setup_vp_install_viteplus() {
@@ -68,6 +77,10 @@ setup_vp_install_viteplus() {
 
 SETUP_VP_VERSION="${SETUP_VP_VERSION:-latest}"
 SETUP_VP_SETUP_REF="${SETUP_VP_SETUP_REF:-v1}"
+setup_vp_pr_version=""
+if [[ "$SETUP_VP_VERSION" =~ ^0\.0\.0-commit\.([0-9a-fA-F]{40})$ ]]; then
+  setup_vp_pr_version="${BASH_REMATCH[1]}"
+fi
 setup_vp_install_tmp="$(mktemp "${TMPDIR:-/tmp}/setup-vp-install.XXXXXX")"
 setup_vp_runtime_tmp="$(mktemp "${TMPDIR:-/tmp}/setup-vp-gitlab-runtime.XXXXXX")"
 trap 'rm -f "$setup_vp_install_tmp" "$setup_vp_runtime_tmp"' EXIT

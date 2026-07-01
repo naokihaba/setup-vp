@@ -363,20 +363,21 @@ test:
 
 ### GitLab Inputs
 
-| Input               | Description                                                                                      | Default  |
-| ------------------- | ------------------------------------------------------------------------------------------------ | -------- |
-| `version`           | Version of Vite+ to install                                                                      | `latest` |
-| `working-directory` | Project directory used for relative paths and default `vp install` execution                     | `.`      |
-| `run-install`       | Run `vp install` after setup. Accepts boolean or YAML object with `cwd`/`args`                   | `true`   |
-| `sfw`               | Wrap `vp install` with [Socket Firewall Free](https://docs.socket.dev/docs/socket-firewall-free) | `false`  |
-| `registry-url`      | Optional registry URL to write to a temporary `.npmrc`                                           |          |
-| `scope`             | Optional scope for authenticating against scoped registries                                      |          |
-| `setup-ref`         | setup-vp ref used to download the GitLab bootstrap and compiled runtime                          | `v1`     |
+| Input               | Description                                                                                               | Default  |
+| ------------------- | --------------------------------------------------------------------------------------------------------- | -------- |
+| `version`           | Version of Vite+ to install                                                                               | `latest` |
+| `working-directory` | Project directory used for relative paths and default `vp install` execution                              | `.`      |
+| `run-install`       | String input for `vp install` after setup. Use `"true"`/`"false"` or a YAML object/list with `cwd`/`args` | `true`   |
+| `sfw`               | Wrap `vp install` with [Socket Firewall Free](https://docs.socket.dev/docs/socket-firewall-free)          | `false`  |
+| `registry-url`      | Optional registry URL to write to a temporary `.npmrc`                                                    |          |
+| `scope`             | Optional scope for authenticating against scoped registries                                               |          |
+| `setup-ref`         | setup-vp ref used to download the GitLab bootstrap and compiled runtime                                   | `v1`     |
 
 ### GitLab Notes
 
 - Use a tag such as `v1` or `v1.0.0` in the remote URL instead of `main`.
 - Pin `setup-ref` to the same tag or commit SHA as the remote URL when strict reproducibility is required.
+- Quote GitLab string inputs such as `run-install: "false"`; unquoted booleans are rejected by GitLab before the setup runtime can parse them.
 - GitLab 17.9+ users can add `integrity` to pin the remote file hash.
 - The template expects a Unix-like runner image with Node.js, `bash`, and either `curl` or `wget`.
 - The GitLab runtime source is TypeScript under `src/gitlab/`, but the template downloads and runs the `vp pack` generated JavaScript bundle from `dist/gitlab/index.mjs`.

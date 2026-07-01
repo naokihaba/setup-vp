@@ -54,7 +54,7 @@ spec:
       export SETUP_VP_SCOPE="$[[ inputs.scope ]]"
       export SETUP_VP_SETUP_REF="$[[ inputs.setup-ref ]]"
 
-      setup_vp_bootstrap_tmp="${TMPDIR:-/tmp}/setup-vp-gitlab-bootstrap.$$"
+      setup_vp_bootstrap_tmp="$(mktemp "${TMPDIR:-/tmp}/setup-vp-gitlab-bootstrap.XXXXXX")"
       setup_vp_env_tmp="$(mktemp "${TMPDIR:-/tmp}/setup-vp-gitlab-env.XXXXXX")"
       chmod 600 "$setup_vp_env_tmp"
       export SETUP_VP_ENV_FILE="$setup_vp_env_tmp"

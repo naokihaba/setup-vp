@@ -39,8 +39,6 @@ setup_vp_export_env() {
 
 setup_vp_install_viteplus_from() {
   setup_vp_url="$1"
-  rm -f "$setup_vp_install_tmp"
-
   setup_vp_download "$setup_vp_url" "$setup_vp_install_tmp"
   VP_VERSION="$SETUP_VP_VERSION" VITE_PLUS_VERSION="$SETUP_VP_VERSION" bash "$setup_vp_install_tmp"
 }
@@ -70,8 +68,8 @@ setup_vp_install_viteplus() {
 
 SETUP_VP_VERSION="${SETUP_VP_VERSION:-latest}"
 SETUP_VP_SETUP_REF="${SETUP_VP_SETUP_REF:-v1}"
-setup_vp_install_tmp="${TMPDIR:-/tmp}/setup-vp-install.$$"
-setup_vp_runtime_tmp="${TMPDIR:-/tmp}/setup-vp-gitlab-runtime.$$.mjs"
+setup_vp_install_tmp="$(mktemp "${TMPDIR:-/tmp}/setup-vp-install.XXXXXX")"
+setup_vp_runtime_tmp="$(mktemp "${TMPDIR:-/tmp}/setup-vp-gitlab-runtime.XXXXXX")"
 trap 'rm -f "$setup_vp_install_tmp" "$setup_vp_runtime_tmp"' EXIT
 
 setup_vp_install_viteplus

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
@@ -43,5 +43,13 @@ describe("GitLab shell helpers", () => {
   it("finds commands on PATH", () => {
     expect(commandPath("sh")).toBeTruthy();
     expect(commandPath("setup-vp-command-that-should-not-exist")).toBeUndefined();
+  });
+
+  it("does not interpolate command names into shell source", () => {
+    const dir = tempDir();
+    const marker = path.join(dir, "injected");
+
+    expect(commandPath(`sh"; printf injected > ${marker}; #`)).toBeUndefined();
+    expect(existsSync(marker)).toBe(false);
   });
 });

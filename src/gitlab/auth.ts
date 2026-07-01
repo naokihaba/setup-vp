@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { exportShellEnv } from "./shell.js";
@@ -28,9 +28,10 @@ export function configureAuth(
   }
 
   const authUrl = registryUrl.replace(/^\w+:/, "").toLowerCase();
-  const npmrc = path.join(tmpdir(), `setup-vp-npmrc.${process.pid}`);
+  const npmrcDir = mkdtempSync(path.join(tmpdir(), "setup-vp-npmrc-"));
+  const npmrc = path.join(npmrcDir, ".npmrc");
   const contents = `${authUrl}:_authToken=${NODE_AUTH_TOKEN_REF}\n${scopePrefix}registry=${registryUrl}\n`;
-  writeFileSync(npmrc, contents, "utf8");
+  writeFileSync(npmrc, contents, { encoding: "utf8", mode: 0o600 });
 
   targetEnv.NPM_CONFIG_USERCONFIG = npmrc;
   targetEnv.PNPM_CONFIG_USERCONFIG = npmrc;

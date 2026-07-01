@@ -25,7 +25,9 @@ export function run(command: string, args: string[], options: SpawnSyncOptions =
 }
 
 export function commandPath(command: string): string | undefined {
-  const result = spawnSync("sh", ["-c", `command -v "${command}"`], { encoding: "utf8" });
+  const result = spawnSync("sh", ["-c", 'command -v "$1"', "sh", command], {
+    encoding: "utf8",
+  });
   if (result.status === 0) return result.stdout.trim();
   return undefined;
 }

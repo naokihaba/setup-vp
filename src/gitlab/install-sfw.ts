@@ -96,7 +96,10 @@ export function downloadFile(
       if (statusCode >= 300 && statusCode < 400 && location) {
         response.resume();
         const nextUrl = new URL(location, url).toString();
-        downloadFile(nextUrl, outputPath, redirects + 1, timeoutMs).then(() => finish(), finish);
+        downloadFile(nextUrl, outputPath, redirects + 1, timeoutMs, clientOverride).then(
+          () => finish(),
+          finish,
+        );
         return;
       }
 

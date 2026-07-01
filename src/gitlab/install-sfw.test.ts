@@ -1,5 +1,6 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
+import type { IncomingMessage } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
@@ -67,5 +68,57 @@ describe("GitLab sfw setup", () => {
     await expect(
       downloadFile("http://example.test/sfw", path.join(dir, "sfw"), 0, 20, stalledClient),
     ).rejects.toThrow("download timed out after 20ms");
+  });
+
+  it("uses the override client when following redirects", async () => {
+    const dir = tempDir();
+    const urls: string[] = [];
+    const redirectingClient: Parameters<typeof downloadFile>[4] = (url, callbackOrOptions) => {
+      if (typeof url !== "string") throw new Error("expected string URL");
+      if (typeof callbackOrOptions !== "function") throw new Error("expected response callback");
+      const callback = callbackOrOptions;
+      urls.push(url);
+      const request = new EventEmitter() as EventEmitter & { destroy(error?: Error): void };
+      request.destroy = (error?: Error) => {
+        if (error) request.emit("error", error);
+      };
+
+      queueMicrotask(() => {
+        const response = new EventEmitter() as EventEmitter & {
+          statusCode: number;
+          headers: { location?: string };
+          pipe(file: NodeJS.WritableStream): NodeJS.WritableStream;
+          resume(): void;
+        };
+        response.headers = {};
+        response.pipe = (file) => {
+          queueMicrotask(() => file.end("sfw"));
+          return file;
+        };
+        response.resume = () => undefined;
+
+        if (urls.length === 1) {
+          response.statusCode = 302;
+          response.headers.location = "https://example.test/sfw";
+          callback(response as unknown as IncomingMessage);
+          return;
+        }
+
+        response.statusCode = 200;
+        callback(response as unknown as IncomingMessage);
+      });
+
+      return request as ReturnType<NonNullable<Parameters<typeof downloadFile>[4]>>;
+    };
+
+    await downloadFile(
+      "http://example.test/sfw",
+      path.join(dir, "sfw"),
+      0,
+      1_000,
+      redirectingClient,
+    );
+
+    expect(urls).toEqual(["http://example.test/sfw", "https://example.test/sfw"]);
   });
 });

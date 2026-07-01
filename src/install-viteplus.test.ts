@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from "vite-plus/test";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vite-plus/test";
 import { exec } from "@actions/exec";
 import { warning } from "@actions/core";
 import { installVitePlus } from "./install-viteplus.js";
@@ -32,7 +32,15 @@ const baseInputs: Inputs = {
 };
 
 describe("installVitePlus", () => {
+  // installVitePlus spreads process.env into the child env, so a VP_PR_VERSION
+  // inherited from the runner (setup-vp's own CI sets it) would make these tests
+  // non-hermetic. Clear it before each test; unstubAllEnvs restores the original.
+  beforeEach(() => {
+    vi.stubEnv("VP_PR_VERSION", undefined);
+  });
+
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.resetAllMocks();
   });
 
@@ -112,5 +120,32 @@ describe("installVitePlus", () => {
     expect(script).toContain("--connect-timeout");
     expect(script).toContain("--max-time");
     expect(script).toMatch(/\| bash$/);
+  });
+
+  const commitSha = "7d848b3da1987fa60b4cf18487fcc36a2a697e94";
+  it.each([
+    {
+      desc: "should route pkg.pr.new commit builds through VP_PR_VERSION",
+      version: `0.0.0-commit.${commitSha}`,
+      expected: commitSha,
+    },
+    {
+      desc: "should not set VP_PR_VERSION for regular published versions",
+      version: "0.2.1",
+      expected: undefined,
+    },
+    {
+      desc: "should require a full 40-char SHA and ignore near-miss lengths",
+      // 39 hex chars: matched the old 7-40 bound but not the tightened 40.
+      version: `0.0.0-commit.${commitSha.slice(0, 39)}`,
+      expected: undefined,
+    },
+  ])("$desc", async ({ version, expected }) => {
+    vi.mocked(exec).mockResolvedValueOnce(0);
+
+    await installVitePlus({ ...baseInputs, version });
+
+    const options = vi.mocked(exec).mock.calls[0][2] as { env: { [key: string]: string } };
+    expect(options.env.VP_PR_VERSION).toBe(expected);
   });
 });
